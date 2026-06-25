@@ -14,22 +14,32 @@ const medicineRoutes = require('../routes/medicine.routes');
 
 const app = express();
 
-// Middleware
+// CORS Middleware (very permissive)
 app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type']
+  origin: true, // Allow any origin
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
+
+// Parse requests
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`[${req.method}] ${req.url}`);
+  next();
+});
 
 // Test routes
 app.get('/', (req, res) => {
-  res.send('Medicine Backend is LIVE! 🚀');
+  res.send('Medicine Backend is LIVE! 🚀<br><br>Try:<br><a href="/test">/test</a><br><a href="/api/medicines">/api/medicines</a><br><a href="/medicines">/medicines</a><br><a href="/api/config">/api/config</a>');
 });
 
 app.get('/test', (req, res) => {
-  res.json({ success: true, message: 'Test route works!' });
+  res.json({ success: true, message: 'Test route works! 🎉' });
 });
 
 // Config endpoint
@@ -39,9 +49,19 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// Medicine Routes
+// Medicine Routes (both prefixes)
 app.use('/api/medicines', medicineRoutes);
-app.use('/medicines', medicineRoutes); // Also support both /api/medicines and /medicines
+app.use('/medicines', medicineRoutes);
+
+// Catch-all debug route
+app.all('*', (req, res) => {
+  console.log(`Catch-all hit for: [${req.method}] ${req.url}`);
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+    availableRoutes: ['/', '/test', '/api/config', '/api/medicines', '/medicines']
+  });
+});
 
 // MongoDB Connection
 const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
