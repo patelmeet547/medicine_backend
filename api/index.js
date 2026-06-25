@@ -23,20 +23,25 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Root route
+// Test routes
 app.get('/', (req, res) => {
   res.send('Medicine Backend is LIVE! 🚀');
+});
+
+app.get('/test', (req, res) => {
+  res.json({ success: true, message: 'Test route works!' });
 });
 
 // Config endpoint
 app.get('/api/config', (req, res) => {
   res.json({
-    whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824'
+    success: true, whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824'
   });
 });
 
 // Medicine Routes
 app.use('/api/medicines', medicineRoutes);
+app.use('/medicines', medicineRoutes); // Also support both /api/medicines and /medicines
 
 // MongoDB Connection
 const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
