@@ -59,6 +59,15 @@ app.get('/api/medicines/meta/categories', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// GET single medicine by ID
+app.get('/api/medicines/:id', (req, res) => {
+  try {
+    const medicine = medicines.find(m => m._id == req.params.id);
+    if (!medicine) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    res.json({ success: true, data: medicine });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // POST medicine
 app.post('/api/medicines', (req, res) => {
   try {
@@ -80,6 +89,47 @@ app.post('/api/medicines', (req, res) => {
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
   }
+});
+
+// PUT (update) medicine
+app.put('/api/medicines/:id', (req, res) => {
+  try {
+    const index = medicines.findIndex(m => m._id == req.params.id);
+    if (index === -1) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    medicines[index] = {
+      ...medicines[index],
+      name: req.body.name,
+      category: req.body.category,
+      drugType: req.body.drugType || '',
+      description: req.body.description,
+      manufacturer: req.body.manufacturer,
+      sideEffects: req.body.sideEffects || '',
+      inStock: req.body.inStock === 'true'
+    };
+    res.json({ success: true, data: medicines[index] });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE single medicine
+app.delete('/api/medicines/:id', (req, res) => {
+  try {
+    const index = medicines.findIndex(m => m._id == req.params.id);
+    if (index === -1) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    medicines.splice(index, 1);
+    res.json({ success: true, message: 'Medicine deleted' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE bulk medicines
+app.delete('/api/medicines/bulk/delete', (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!ids || !Array.isArray(ids)) return res.status(400).json({ success: false, message: 'Invalid request' });
+    medicines = medicines.filter(m => !ids.includes(m._id));
+    res.json({ success: true, message: `${ids.length} medicines deleted` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // Also support /medicines without /api prefix
