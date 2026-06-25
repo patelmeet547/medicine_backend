@@ -82,11 +82,16 @@ app.post('/api/medicines', (req, res) => {
     res.status(400).json({ success: false, message: err.message });
   }
 });
+// /medicines → /api/medicines redirect
+app.get('/medicines', async (req, res) => {
+  const result = medicines.slice().reverse();
+  res.json({ success: true, data: result });
+});
 
-// Also support /medicines without /api prefix
-app.use('/medicines', (req, res, next) => {
-  req.url = '/api/medicines' + req.url;
-  app.handle(req, res, next);
+// /categories → categories list
+app.get('/categories', async (req, res) => {
+  const categories = [...new Set(medicines.map(m => m.category))];
+  res.json({ success: true, data: categories });
 });
 
 // Listen locally if not on Vercel
