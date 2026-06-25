@@ -1,61 +1,53 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
-const path = require('path');
-const multer = require('multer');
-const fs = require('fs');
 
 // Load environment variables if available
-try { require('dotenv').config(); } catch (e) { console.log('dotenv not found'); }
+try { require('dotenv').config(); } catch (e) { /* ignore */ }
 
 const app = express();
 
-// 1. CORS - very permissive
+// 1. Super permissive CORS
 app.use(cors({ origin: true, credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type'] }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// 2. Make uploads setup
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) { try { fs.mkdirSync(uploadDir, { recursive: true }); console.log('Uploads dir created'); } catch (e) { console.error('Uploads dir error:', e); } }
-app.use('/uploads', express.static(uploadDir));
+// 2. In-memory storage (for immediate testing, NO DB needed!)
+let medicines = [];
+let nextId = 1;
 
-// 3. Multer setup
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname))
+// 3. Routes
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>✅ Backend LIVE!</h1>
+    <h2>Try these:</h2>
+    <ul>
+      <li><a href="/test">/test</a></li>
+      <li><a href="/api/medicines">/api/medicines</a></li>
+      <li><a href="/api/medicines/meta/categories">/api/medicines/meta/categories</a></li>
+      <li><a href="/api/config">/api/config</a></li>
+    </ul>
+  `);
 });
-const upload = multer({ storage: storage });
 
-// 4. Medicine Schema
-const medicineSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  category: { type: String, required: true },
-  drugType: { type: String, default: '' },
-  description: { type: String, required: true },
-  manufacturer: { type: String, required: true },
-  sideEffects: { type: String, default: '' },
-  inStock: { type: Boolean, default: true },
-  image: { type: String, default: '' },
-  images: [{ type: String, default: '' }]
-}, { timestamps: true });
+app.get('/test', (req, res) => {
+  res.json({ success: true, message: '🎉 Test route works perfectly!' });
+});
 
-const Medicine = mongoose.model('Medicine', medicineSchema);
-
-// 5. Routes
-app.get('/', (req, res) => { res.send('Backend LIVE! 🚀<br>Try:<br><a href=\"/test\">/test</a><br><a href=\"/api/medicines\">/api/medicines</a>'); });
-app.get('/test', (req, res) => res.json({ success: true, message: 'Test works!' }));
-app.get('/api/config', (req, res) => res.json({ success: true, whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824' }));
+app.get('/api/config', (req, res) => {
+  res.json({
+    success: true,
+    whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824',
+    usingInMemoryStorage: true
+  });
+});
 
 // GET all medicines
 app.get('/api/medicines', async (req, res) => {
-  console.log('📥 GET /api/medicines');
   try {
-    const medicines = await Medicine.find().sort({ createdAt: -1 });
-    console.log('📤 Found', medicines.length, 'meds');
-    res.json({ success: true, data: medicines });
+    // Optional: use MongoDB if available, else in-memory
+    const result = medicines.slice().reverse(); // newest first
+    res.json({ success: true, data: result });
   } catch (err) {
-    console.error('❌ GET error:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -63,16 +55,16 @@ app.get('/api/medicines', async (req, res) => {
 // GET categories
 app.get('/api/medicines/meta/categories', async (req, res) => {
   try {
-    const categories = await Medicine.distinct('category');
+    const categories = [...new Set(medicines.map(m => m.category))];
     res.json({ success: true, data: categories });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // POST medicine
-app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
+app.post('/api/medicines', (req, res) => {
   try {
-    const imageUrls = req.files ? req.files.map(file => '/uploads/' + file.filename) : [];
-    const medicine = new Medicine({
+    const medicine = {
+      _id: nextId++,
       name: req.body.name,
       category: req.body.category,
       drugType: req.body.drugType || '',
@@ -80,36 +72,27 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
       manufacturer: req.body.manufacturer,
       sideEffects: req.body.sideEffects || '',
       inStock: req.body.inStock === 'true',
-      image: imageUrls[0] || '',
-      images: imageUrls
-    });
-    await medicine.save();
+      image: '',
+      images: [],
+      createdAt: new Date()
+    };
+    medicines.push(medicine);
     res.status(201).json({ success: true, data: medicine });
   } catch (err) {
-    console.error('❌ POST error:', err);
     res.status(400).json({ success: false, message: err.message });
   }
 });
 
-// Also support without /api prefix (for compatibility)
+// Also support /medicines without /api prefix
 app.use('/medicines', (req, res, next) => {
   req.url = '/api/medicines' + req.url;
   app.handle(req, res, next);
 });
 
-// 6. MongoDB
-const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
-if (mongoURI) {
-  mongoose.connect(mongoURI)
-    .then(() => console.log('✅ MongoDB Connected'))
-    .catch(err => console.error('❌ MongoDB Error:', err.message));
-} else {
-  console.log('⚠️ No MongoDB URI');
-}
-
+// Listen locally if not on Vercel
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => console.log(`Listening on', PORT));
+  app.listen(PORT, () => console.log('🚀 Backend listening on port', PORT));
 }
 
 module.exports = app;
