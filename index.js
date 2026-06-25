@@ -68,18 +68,19 @@ app.get('/api/medicines/:id', (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST medicine
+// POST medicine (accept JSON OR FormData)
 app.post('/api/medicines', (req, res) => {
   try {
+    const data = req.body;
     const medicine = {
       _id: nextId++,
-      name: req.body.name,
-      category: req.body.category,
-      drugType: req.body.drugType || '',
-      description: req.body.description,
-      manufacturer: req.body.manufacturer,
-      sideEffects: req.body.sideEffects || '',
-      inStock: req.body.inStock === 'true',
+      name: data.name,
+      category: data.category,
+      drugType: data.drugType || '',
+      description: data.description,
+      manufacturer: data.manufacturer,
+      sideEffects: data.sideEffects || '',
+      inStock: data.inStock === 'true' || data.inStock === true,
       image: '',
       images: [],
       createdAt: new Date()
@@ -96,15 +97,16 @@ app.put('/api/medicines/:id', (req, res) => {
   try {
     const index = medicines.findIndex(m => m._id == req.params.id);
     if (index === -1) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    const data = req.body;
     medicines[index] = {
       ...medicines[index],
-      name: req.body.name,
-      category: req.body.category,
-      drugType: req.body.drugType || '',
-      description: req.body.description,
-      manufacturer: req.body.manufacturer,
-      sideEffects: req.body.sideEffects || '',
-      inStock: req.body.inStock === 'true'
+      name: data.name,
+      category: data.category,
+      drugType: data.drugType || '',
+      description: data.description,
+      manufacturer: data.manufacturer,
+      sideEffects: data.sideEffects || '',
+      inStock: data.inStock === 'true' || data.inStock === true
     };
     res.json({ success: true, data: medicines[index] });
   } catch (err) {
