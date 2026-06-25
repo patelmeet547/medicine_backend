@@ -13,6 +13,11 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({ message: 'Medicine Management Backend API is running!' });
+});
+
 // Routes
 app.use('/api/medicines', medicineRoutes);
 
