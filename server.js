@@ -3,13 +3,23 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
 
+console.log('🚀 Starting server...');
+
 // Load environment variables
 try {
   require('dotenv').config();
+  console.log('✅ dotenv loaded');
 } catch (e) {
-  console.log('dotenv not found, using environment variables');
+  console.log('⚠️ dotenv not found, using environment variables');
 }
 
+console.log('📝 Environment variables loaded:', {
+  MONGODB_URI: process.env.MONGODB_URI ? 'set' : 'not set',
+  MONGO_URI: process.env.MONGO_URI ? 'set' : 'not set',
+  VERCEL: process.env.VERCEL ? 'yes' : 'no'
+});
+
+// Import medicine routes first!
 const medicineRoutes = require('./routes/medicine.routes');
 
 const app = express();
@@ -23,7 +33,11 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/', (req, res) => {
   res.json({ 
     message: 'Medicine Management Backend API is running!',
-    mongoConnected: mongoose.connection.readyState === 1 
+    mongoConnected: mongoose.connection.readyState === 1,
+    env: {
+      VERCEL: process.env.VERCEL,
+      NODE_ENV: process.env.NODE_ENV
+    }
   });
 });
 
@@ -37,13 +51,29 @@ app.get('/api/config', (req, res) => {
   });
 });
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('🔥 Server Error:', err);
+  res.status(500).json({ 
+    success: false, 
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
+});
+
 // MongoDB Connection with better error handling
 const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
 
 if (mongoURI) {
-  mongoose.connect(mongoURI)
+  console.log('🔗 Connecting to MongoDB...');
+  mongoose.connect(mongoURI, {
+    serverSelectionTimeoutMS: 5000
+  })
     .then(() => console.log('✅ MongoDB Connected'))
-    .catch((err) => console.error('❌ MongoDB Connection Error:', err.message));
+    .catch((err) => {
+      console.error('❌ MongoDB Connection Error:', err.message);
+      console.error('❌ Full error:', err);
+    });
 } else {
   console.log('⚠️ No MongoDB URI provided, database will not be connected');
 }
