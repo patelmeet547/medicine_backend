@@ -2,7 +2,13 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+
+// Load environment variables
+try {
+  require('dotenv').config();
+} catch (e) {
+  console.log('dotenv not found, using environment variables');
+}
 
 const medicineRoutes = require('./routes/medicine.routes');
 
@@ -15,7 +21,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Root route
 app.get('/', (req, res) => {
-  res.json({ message: 'Medicine Management Backend API is running!' });
+  res.json({ 
+    message: 'Medicine Management Backend API is running!',
+    mongoConnected: mongoose.connection.readyState === 1 
+  });
 });
 
 // Routes
@@ -28,11 +37,16 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// MongoDB Connection
-mongoose
-  .connect(process.env.MONGODB_URI || process.env.MONGO_URI)
-  .then(() => console.log('✅ MongoDB Connected'))
-  .catch((err) => console.error('❌ MongoDB Error:', err));
+// MongoDB Connection with better error handling
+const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI;
+
+if (mongoURI) {
+  mongoose.connect(mongoURI)
+    .then(() => console.log('✅ MongoDB Connected'))
+    .catch((err) => console.error('❌ MongoDB Connection Error:', err.message));
+} else {
+  console.log('⚠️ No MongoDB URI provided, database will not be connected');
+}
 
 const PORT = process.env.PORT || 5000;
 
