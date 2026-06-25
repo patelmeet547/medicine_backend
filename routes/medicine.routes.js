@@ -5,8 +5,26 @@ const Medicine = require('../models/Medicine');
 const path    = require('path');
 const fs      = require('fs');
 
+// Make sure uploads directory exists
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  try {
+    fs.mkdirSync(uploadDir, { recursive: true });
+    console.log('✅ Uploads directory created');
+  } catch (err) {
+    console.error('❌ Failed to create uploads directory:', err);
+  }
+}
+
+// Log all medicine requests
+router.use((req, res, next) => {
+  console.log(`[MEDICINE ROUTE] ${req.method} ${req.url}`);
+  next();
+});
+
 // GET all medicines (with optional filters)
 router.get('/', async (req, res) => {
+  console.log('📥 GET /medicines (or /api/medicines) called');
   try {
     const { category, inStock, search } = req.query;
     const filter = {};
@@ -19,9 +37,12 @@ router.get('/', async (req, res) => {
       { manufacturer: { $regex: search, $options: 'i' } },
       { category:     { $regex: search, $options: 'i' } },
     ];
+    console.log('🔍 Query filter:', filter);
     const medicines = await Medicine.find(filter).sort({ createdAt: -1 });
+    console.log('📤 Found', medicines.length, 'medicines');
     res.json({ success: true, data: medicines });
   } catch (err) {
+    console.error('❌ Error in GET /medicines:', err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
