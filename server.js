@@ -36,8 +36,8 @@ mongoose
 
 const PORT = process.env.PORT || 5000;
 
-// Only listen if we're not in a serverless environment (like Vercel)
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+// For local development only
+if (require.main === module) {
   app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
 }
 
