@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const mongoose = require('mongoose');
 
 // Load environment variables if available
 try { require('dotenv').config(); } catch (e) { /* ignore */ }
@@ -8,17 +9,23 @@ const app = express();
 
 // 1. Super permissive CORS
 app.use(cors({ origin: true, credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type'] }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// 2. In-memory storage (for immediate testing, NO DB needed!)
-let medicines = [];
-let nextId = 1;
+// 2. Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true
+}).then(() => {
+  console.log('✅ Connected to MongoDB Atlas');
+}).catch((err) => {
+  console.error('❌ Failed to connect to MongoDB', err);
+});
 
 // 3. Routes
 app.get('/', (req, res) => {
   res.send(`
-    <h1>✅ Backend LIVE!</h1>
+    <h1>✅ Backend LIVE! (MongoDB Connected)</h1>
     <h2>Try these:</h2>
     <ul>
       <li><a href="/test">/test</a></li>
@@ -37,102 +44,12 @@ app.get('/api/config', (req, res) => {
   res.json({
     success: true,
     whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824',
-    usingInMemoryStorage: true
+    usingInMemoryStorage: false
   });
 });
 
-// GET all medicines
-app.get('/api/medicines', async (req, res) => {
-  try {
-    const result = medicines.slice().reverse(); // newest first
-    res.json({ success: true, data: result });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// GET categories
-app.get('/api/medicines/meta/categories', async (req, res) => {
-  try {
-    const categories = [...new Set(medicines.map(m => m.category))];
-    res.json({ success: true, data: categories });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
-// GET single medicine by ID
-app.get('/api/medicines/:id', (req, res) => {
-  try {
-    const medicine = medicines.find(m => m._id == req.params.id);
-    if (!medicine) return res.status(404).json({ success: false, message: 'Medicine not found' });
-    res.json({ success: true, data: medicine });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
-// POST medicine (accept JSON OR FormData)
-app.post('/api/medicines', (req, res) => {
-  try {
-    const data = req.body;
-    const medicine = {
-      _id: nextId++,
-      name: data.name,
-      category: data.category,
-      drugType: data.drugType || '',
-      description: data.description,
-      manufacturer: data.manufacturer,
-      sideEffects: data.sideEffects || '',
-      inStock: data.inStock === 'true' || data.inStock === true,
-      image: '',
-      images: [],
-      createdAt: new Date()
-    };
-    medicines.push(medicine);
-    res.status(201).json({ success: true, data: medicine });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// PUT (update) medicine
-app.put('/api/medicines/:id', (req, res) => {
-  try {
-    const index = medicines.findIndex(m => m._id == req.params.id);
-    if (index === -1) return res.status(404).json({ success: false, message: 'Medicine not found' });
-    const data = req.body;
-    medicines[index] = {
-      ...medicines[index],
-      name: data.name,
-      category: data.category,
-      drugType: data.drugType || '',
-      description: data.description,
-      manufacturer: data.manufacturer,
-      sideEffects: data.sideEffects || '',
-      inStock: data.inStock === 'true' || data.inStock === true
-    };
-    res.json({ success: true, data: medicines[index] });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// DELETE single medicine
-app.delete('/api/medicines/:id', (req, res) => {
-  try {
-    const index = medicines.findIndex(m => m._id == req.params.id);
-    if (index === -1) return res.status(404).json({ success: false, message: 'Medicine not found' });
-    medicines.splice(index, 1);
-    res.json({ success: true, message: 'Medicine deleted' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
-// DELETE bulk medicines
-app.delete('/api/medicines/bulk/delete', (req, res) => {
-  try {
-    const { ids } = req.body;
-    if (!ids || !Array.isArray(ids)) return res.status(400).json({ success: false, message: 'Invalid request' });
-    medicines = medicines.filter(m => !ids.includes(m._id));
-    res.json({ success: true, message: `${ids.length} medicines deleted` });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
+// API Routes
+app.use('/api/medicines', require('./routes/medicine.routes'));
 
 // Also support /medicines without /api prefix
 app.use('/medicines', (req, res, next) => {

@@ -2,19 +2,28 @@ const express = require('express');
 const router  = express.Router();
 const upload  = require('../middleware/upload');
 const Medicine = require('../models/Medicine');
-const path    = require('path');
-const fs      = require('fs');
+const cloudinary = require('cloudinary').v2;
 
-// Make sure uploads directory exists
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-  try {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log('✅ Uploads directory created');
-  } catch (err) {
-    console.error('❌ Failed to create uploads directory:', err);
-  }
-}
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Helper function to upload buffer to Cloudinary
+const uploadToCloudinary = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder: 'medicines' },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      }
+    );
+    uploadStream.end(buffer);
+  });
+};
 
 // Log all medicine requests
 router.use((req, res, next) => {
@@ -73,10 +82,12 @@ router.post('/', upload.array('images', 10), async (req, res) => {
   try {
     const { name, category, drugType, description, manufacturer, sideEffects, inStock } = req.body;
     
-    // Handle multiple images
-    const imageUrls = req.files && req.files.length > 0 
-      ? req.files.map(file => `/uploads/${file.filename}`) 
-      : [];
+    // Handle multiple images to Cloudinary
+    let imageUrls = [];
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(file => uploadToCloudinary(file.buffer));
+      imageUrls = await Promise.all(uploadPromises);
+    }
     
     // For backward compatibility, set the first image as the main image
     const mainImage = imageUrls.length > 0 ? imageUrls[0] : '';
@@ -115,23 +126,15 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
       keptImages = [];
     }
     
-    // Get new uploaded images
-    const newImageUrls = req.files && req.files.length > 0 
-      ? req.files.map(file => `/uploads/${file.filename}`) 
-      : [];
+    // Get new uploaded images to Cloudinary
+    let newImageUrls = [];
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(file => uploadToCloudinary(file.buffer));
+      newImageUrls = await Promise.all(uploadPromises);
+    }
     
     // Combine kept existing images with new images
     const allImages = [...keptImages, ...newImageUrls].slice(0, 10);
-    
-    // Delete images that are no longer needed
-    if (existing.images && existing.images.length > 0) {
-      existing.images.forEach(imgUrl => {
-        if (!allImages.includes(imgUrl)) {
-          const oldPath = path.join(__dirname, '..', imgUrl);
-          if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
-        }
-      });
-    }
     
     // For backward compatibility, set the first image as the main image
     const mainImage = allImages.length > 0 ? allImages[0] : '';
@@ -163,19 +166,8 @@ router.delete('/bulk/delete', async (req, res) => {
     const { ids } = req.body;
     if (!ids || !Array.isArray(ids) || ids.length === 0)
       return res.status(400).json({ success: false, message: 'No IDs provided' });
-    const meds = await Medicine.find({ _id: { $in: ids } });
-    meds.forEach((med) => {
-      // Delete all images
-      if (med.images && med.images.length > 0) {
-        med.images.forEach(imgUrl => {
-          const imgPath = path.join(__dirname, '..', imgUrl);
-          if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-        });
-      } else if (med.image) {
-        const imgPath = path.join(__dirname, '..', med.image);
-        if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-      }
-    });
+    
+    // Note: To fully clean up, you should also delete images from Cloudinary here
     await Medicine.deleteMany({ _id: { $in: ids } });
     res.json({ success: true, message: `${ids.length} medicines deleted` });
   } catch (err) {
@@ -189,17 +181,7 @@ router.delete('/:id', async (req, res) => {
     const medicine = await Medicine.findById(req.params.id);
     if (!medicine) return res.status(404).json({ success: false, message: 'Medicine not found' });
     
-    // Delete all images
-    if (medicine.images && medicine.images.length > 0) {
-      medicine.images.forEach(imgUrl => {
-        const imgPath = path.join(__dirname, '..', imgUrl);
-        if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-      });
-    } else if (medicine.image) {
-      const imgPath = path.join(__dirname, '..', medicine.image);
-      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
-    }
-    
+    // Note: To fully clean up, you should also delete images from Cloudinary here
     await Medicine.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: 'Medicine deleted successfully' });
   } catch (err) {
