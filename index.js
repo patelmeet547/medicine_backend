@@ -2,6 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const multer = require('multer');
+let cloudinary;
+try {
+  cloudinary = require('cloudinary').v2;
+} catch (e) {
+  console.log('Cloudinary not found');
+}
 
 // Load environment variables
 try { require('dotenv').config(); } catch (e) { /* ignore */ }
@@ -10,6 +16,20 @@ const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Configure Cloudinary if available
+if (cloudinary) {
+  try {
+    cloudinary.config({
+      cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+      api_key: process.env.CLOUDINARY_API_KEY,
+      api_secret: process.env.CLOUDINARY_API_SECRET
+    });
+    console.log('✅ Cloudinary configured');
+  } catch (e) {
+    console.log('⚠️ Cloudinary config failed:', e.message);
+  }
+}
 
 // Configure multer for file uploads
 const storage = multer.memoryStorage();
@@ -20,7 +40,6 @@ let Medicine;
 try {
   Medicine = require('./models/Medicine');
 } catch (e) {
-  // Fallback if model fails
   const medicineSchema = new mongoose.Schema({
     name: { type: String, required: true },
     category: { type: String, required: true },
@@ -55,6 +74,26 @@ mongoose.connect(mongoURI)
     useInMemory = true;
   });
 
+// Helper to upload to Cloudinary
+const uploadToCloudinary = async (buffer) => {
+  if (!cloudinary) return null;
+  try {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        { folder: 'medicines' },
+        (error, result) => {
+          if (error) return reject(error);
+          resolve(result.secure_url);
+        }
+      );
+      uploadStream.end(buffer);
+    });
+  } catch (e) {
+    console.log('⚠️ Cloudinary upload failed:', e.message);
+    return null;
+  }
+};
+
 // Test routes
 app.get('/', (req, res) => {
   res.send(`<h1>✅ Backend LIVE!</h1><p>Using: ${useInMemory ? 'In-Memory Storage' : 'MongoDB'}</p>`);
@@ -63,6 +102,7 @@ app.get('/test', (req, res) => res.json({ success: true, message: 'Works!' }));
 app.get('/api/config', (req, res) => res.json({
   success: true,
   usingMongoDB: !useInMemory,
+  usingCloudinary: !!cloudinary,
   whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824'
 }));
 
@@ -77,14 +117,12 @@ const getMedicines = async (filter = {}) => {
       result = result.filter(m => m.inStock === filter.inStock);
     }
     if (filter.$or) {
-      // Simple search for in-memory
-      result = result.filter(m => {
-        const searchRegex = filter.$or[0].name.$regex;
-        const searchOptions = filter.$or[0].name.$options;
-        return m.name.toLowerCase().includes(searchRegex.toLowerCase()) ||
-               m.description.toLowerCase().includes(searchRegex.toLowerCase()) ||
-               m.manufacturer.toLowerCase().includes(searchRegex.toLowerCase());
-      });
+      const searchRegex = filter.$or[0].name.$regex.toLowerCase();
+      result = result.filter(m =>
+        m.name.toLowerCase().includes(searchRegex) ||
+        m.description.toLowerCase().includes(searchRegex) ||
+        m.manufacturer.toLowerCase().includes(searchRegex)
+      );
     }
     return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }
@@ -149,6 +187,20 @@ app.get('/api/medicines/:id', async (req, res) => {
 app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
   try {
     const data = req.body;
+    let imageUrls = [];
+    let mainImage = '';
+
+    // Upload images to Cloudinary if available
+    if (req.files && req.files.length > 0) {
+      imageUrls = await Promise.all(
+        req.files.map(async (file) => {
+          const url = await uploadToCloudinary(file.buffer);
+          return url || '';
+        })
+      ).catch(() => []);
+      mainImage = imageUrls[0] || '';
+    }
+
     const medicineData = {
       name: data.name,
       category: data.category,
@@ -157,8 +209,8 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
       manufacturer: data.manufacturer,
       sideEffects: data.sideEffects || '',
       inStock: data.inStock === 'true' || data.inStock === true,
-      image: '',
-      images: []
+      image: mainImage,
+      images: imageUrls
     };
 
     if (useInMemory) {
@@ -179,12 +231,43 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
 app.put('/api/medicines/:id', upload.array('images', 10), async (req, res) => {
   try {
     const data = req.body;
+    let existingImages = [];
+
+    // Parse existing images from request
+    if (data.keepImages) {
+      try {
+        existingImages = JSON.parse(data.keepImages);
+      } catch (e) {
+        existingImages = [];
+      }
+    }
+
+    // Upload new images to Cloudinary
+    let newImages = [];
+    if (req.files && req.files.length > 0) {
+      newImages = await Promise.all(
+        req.files.map(async (file) => {
+          const url = await uploadToCloudinary(file.buffer);
+          return url || '';
+        })
+      ).catch(() => []);
+    }
+
+    const allImages = [...existingImages, ...newImages].slice(0, 10);
+    const mainImage = allImages[0] || '';
+
     if (useInMemory) {
       const index = inMemoryMedicines.findIndex(m => m._id == req.params.id);
       if (index === -1) {
         return res.status(404).json({ success: false, message: 'Not found' });
       }
-      inMemoryMedicines[index] = { ...inMemoryMedicines[index], ...data, _id: req.params.id };
+      inMemoryMedicines[index] = {
+        ...inMemoryMedicines[index],
+        ...data,
+        image: mainImage,
+        images: allImages,
+        _id: req.params.id
+      };
       res.json({ success: true, data: inMemoryMedicines[index] });
     } else {
       const medicine = await Medicine.findById(req.params.id);
@@ -198,7 +281,9 @@ app.put('/api/medicines/:id', upload.array('images', 10), async (req, res) => {
         description: data.description,
         manufacturer: data.manufacturer,
         sideEffects: data.sideEffects || '',
-        inStock: data.inStock === 'true' || data.inStock === true
+        inStock: data.inStock === 'true' || data.inStock === true,
+        image: mainImage,
+        images: allImages
       });
       await medicine.save();
       res.json({ success: true, data: medicine });
