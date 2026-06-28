@@ -352,6 +352,7 @@ app.post('/api/orders', async (req, res) => {
         customerPhone,
         items,
         status: 'Pending',
+        isRead: false,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -375,6 +376,36 @@ app.get('/api/orders', async (req, res) => {
     } else {
       const orders = await Order.find().sort({ createdAt: -1 });
       return res.json({ success: true, data: orders });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get unread orders count
+app.get('/api/orders/unread-count', async (req, res) => {
+  try {
+    if (useInMemory) {
+      const count = inMemoryOrders.filter(o => !o.isRead).length;
+      return res.json({ success: true, count });
+    } else {
+      const count = await Order.countDocuments({ isRead: false });
+      return res.json({ success: true, count });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Mark all orders as read
+app.put('/api/orders/mark-read', async (req, res) => {
+  try {
+    if (useInMemory) {
+      inMemoryOrders.forEach(o => o.isRead = true);
+      return res.json({ success: true, message: 'Marked as read' });
+    } else {
+      await Order.updateMany({ isRead: false }, { isRead: true });
+      return res.json({ success: true, message: 'Marked as read' });
     }
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
