@@ -58,16 +58,32 @@ try {
   }
 }
 
+// Import Models
+const Order = require('./models/Order');
+const Admin = require('./models/Admin');
+
 // In-memory fallback if MongoDB fails
 let inMemoryMedicines = [];
+let inMemoryOrders = [];
 let useInMemory = false;
 
 // Connect to MongoDB
-const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb+srv://mvasoya829_db_user:Bhuri123456@medicine.224a9s8.mongodb.net/medicine_db?retryWrites=true&w=majority&appName=medicine";
+const mongoURI = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb+srv://mvasoya829_db_user:Bhuri12345@medicine.224a9s8.mongodb.net/medicine_db?retryWrites=true&w=majority&appName=medicine";
 mongoose.connect(mongoURI)
-  .then(() => {
+  .then(async () => {
     console.log('✅ MongoDB Connected');
     useInMemory = false;
+    
+    // Seed default Admin if none exists
+    try {
+      const adminExists = await Admin.findOne({ email: 'admin@gmail.com' });
+      if (!adminExists) {
+        await Admin.create({ email: 'admin@gmail.com', password: 'Admin@12123' });
+        console.log('✅ Default Admin seeded in MongoDB');
+      }
+    } catch (e) {
+      console.log('⚠️ Could not seed admin:', e.message);
+    }
   })
   .catch((err) => {
     console.log('⚠️ MongoDB failed, using in-memory:', err.message);
@@ -320,6 +336,91 @@ app.delete('/api/medicines/bulk/delete', async (req, res) => {
       await Medicine.deleteMany({ _id: { $in: ids } });
     }
     res.json({ success: true, message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Create an order
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { customerName, customerPhone, items } = req.body;
+    if (useInMemory) {
+      const newOrder = {
+        _id: Date.now().toString(),
+        customerName,
+        customerPhone,
+        items,
+        status: 'Pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      inMemoryOrders.push(newOrder);
+      return res.status(201).json({ success: true, data: newOrder });
+    } else {
+      const order = new Order({ customerName, customerPhone, items });
+      await order.save();
+      return res.status(201).json({ success: true, data: order });
+    }
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// Get all orders (for admin)
+app.get('/api/orders', async (req, res) => {
+  try {
+    if (useInMemory) {
+      return res.json({ success: true, data: inMemoryOrders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)) });
+    } else {
+      const orders = await Order.find().sort({ createdAt: -1 });
+      return res.json({ success: true, data: orders });
+    }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Update order status
+app.put('/api/orders/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (useInMemory) {
+      const order = inMemoryOrders.find(o => o._id === req.params.id);
+      if (!order) return res.status(404).json({ success: false, message: 'Not found' });
+      order.status = status;
+      order.updatedAt = new Date();
+      return res.json({ success: true, data: order });
+    } else {
+      const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
+      if (!order) return res.status(404).json({ success: false, message: 'Not found' });
+      return res.json({ success: true, data: order });
+    }
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// Admin Login Route
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password required' });
+  
+  if (useInMemory) {
+    if (email === 'admin@gmail.com' && password === 'Admin@12123') {
+      return res.json({ success: true, message: 'Login successful' });
+    }
+    return res.status(401).json({ success: false, message: 'Invalid credentials' });
+  }
+
+  try {
+    const admin = await Admin.findOne({ email });
+    if (!admin) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    
+    // Using plain text comparison
+    if (admin.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    
+    res.json({ success: true, message: 'Login successful' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
