@@ -422,10 +422,18 @@ app.put('/api/orders/:id/status', async (req, res) => {
     if (useInMemory) {
       const order = inMemoryOrders.find(o => o._id === req.params.id);
       if (!order) return res.status(404).json({ success: false, message: 'Not found' });
+      if (order.status === 'Completed' || order.status === 'Cancelled') {
+        return res.status(400).json({ success: false, message: 'Completed or cancelled orders cannot be changed' });
+      }
       order.status = status;
       order.updatedAt = new Date();
       return res.json({ success: true, data: order });
     } else {
+      const existingOrder = await Order.findById(req.params.id);
+      if (!existingOrder) return res.status(404).json({ success: false, message: 'Not found' });
+      if (existingOrder.status === 'Completed' || existingOrder.status === 'Cancelled') {
+        return res.status(400).json({ success: false, message: 'Completed or cancelled orders cannot be changed' });
+      }
       const order = await Order.findByIdAndUpdate(req.params.id, { status }, { new: true });
       if (!order) return res.status(404).json({ success: false, message: 'Not found' });
       return res.json({ success: true, data: order });
