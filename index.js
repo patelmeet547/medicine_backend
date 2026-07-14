@@ -61,6 +61,8 @@ try {
 // Import Models
 const Order = require('./models/Order');
 const Admin = require('./models/Admin');
+const DEFAULT_ADMIN_EMAIL = 'tirthpatel@gmail.com';
+const DEFAULT_ADMIN_PASSWORD = 'Tirth@12123';
 
 // In-memory fallback if MongoDB fails
 let inMemoryMedicines = [];
@@ -74,15 +76,16 @@ mongoose.connect(mongoURI)
     console.log('✅ MongoDB Connected');
     useInMemory = false;
     
-    // Seed default Admin if none exists
+    // Seed/update default Admin
     try {
-      const adminExists = await Admin.findOne({ email: 'admin@gmail.com' });
-      if (!adminExists) {
-        await Admin.create({ email: 'admin@gmail.com', password: 'Admin@12123' });
-        console.log('✅ Default Admin seeded in MongoDB');
-      }
+      await Admin.findOneAndUpdate(
+        { email: DEFAULT_ADMIN_EMAIL },
+        { email: DEFAULT_ADMIN_EMAIL, password: DEFAULT_ADMIN_PASSWORD },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+      console.log('Default Admin ready in MongoDB');
     } catch (e) {
-      console.log('⚠️ Could not seed admin:', e.message);
+      console.log('Could not seed admin:', e.message);
     }
   })
   .catch((err) => {
@@ -436,16 +439,21 @@ app.put('/api/orders/:id/status', async (req, res) => {
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password required' });
+  const normalizedEmail = email.trim().toLowerCase();
+  
+  if (normalizedEmail === DEFAULT_ADMIN_EMAIL && password === DEFAULT_ADMIN_PASSWORD) {
+    return res.json({ success: true, message: 'Login successful' });
+  }
   
   if (useInMemory) {
-    if (email === 'admin@gmail.com' && password === 'Admin@12123') {
+    if (normalizedEmail === DEFAULT_ADMIN_EMAIL && password === DEFAULT_ADMIN_PASSWORD) {
       return res.json({ success: true, message: 'Login successful' });
     }
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
   }
 
   try {
-    const admin = await Admin.findOne({ email });
+    const admin = await Admin.findOne({ email: normalizedEmail });
     if (!admin) return res.status(401).json({ success: false, message: 'Invalid credentials' });
     
     // Using plain text comparison
