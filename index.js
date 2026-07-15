@@ -61,12 +61,47 @@ try {
 // Import Models
 const Order = require('./models/Order');
 const Admin = require('./models/Admin');
+const HomeContent = require('./models/HomeContent');
 const DEFAULT_ADMIN_EMAIL = 'tirthpatel@gmail.com';
 const DEFAULT_ADMIN_PASSWORD = 'Tirth@12123';
+
+const defaultHomeContent = {
+  heroBadge: '5000+ Pharmaceutical Products',
+  heroTitle: 'Quality Medicines,',
+  heroHighlight: 'Trusted Service',
+  heroText: 'Pankaj Medical Agency supplies trusted medicines with quality, care, and reliable service for customers and healthcare partners.',
+  heroButtonText: 'Explore Products',
+  heroPrimaryImage: '',
+  heroSecondaryImage: '',
+  stats: [
+    { value: '5000+', label: 'Products' },
+    { value: '25+', label: 'Years' },
+    { value: '5+', label: 'Specialties' }
+  ],
+  categoriesEyebrow: 'Explore our',
+  categoriesTitle: 'Product Categories',
+  categoriesText: 'Auto-sliding pharmaceutical categories for faster browsing.',
+  aboutEyebrow: 'About',
+  aboutTitle: 'Pankaj Medical Agency',
+  aboutLead: 'A quarter century of pharmaceutical care.',
+  aboutText: 'Pankaj Medical Agency covers quality medicines with trust, reliable service, and timely supply.',
+  standardsEyebrow: 'Our Standards',
+  standardsTitle: 'Quality is not a process. It is a culture.',
+  standards: [
+    { title: 'Trust Assurance', text: 'Verified products and careful handling.', icon: 'shield' },
+    { title: 'Authentic Products', text: 'Reliable sourcing from known suppliers.', icon: 'check' },
+    { title: 'Timely Delivery', text: 'Responsive service for every order.', icon: 'truck' }
+  ],
+  footerText: 'Pankaj Medical Agency provides quality medicines, trusted service, and dependable pharmaceutical support.',
+  footerEmail: 'pankajmedical@gmail.com',
+  footerPhone: '+91 90231 78824',
+  footerAddress: 'Pankaj Medical Agency'
+};
 
 // In-memory fallback if MongoDB fails
 let inMemoryMedicines = [];
 let inMemoryOrders = [];
+let inMemoryHomeContent = { ...defaultHomeContent };
 let useInMemory = false;
 
 // Connect to MongoDB
@@ -113,6 +148,29 @@ const uploadToCloudinary = async (buffer) => {
   }
 };
 
+const parseJsonField = (value, fallback) => {
+  if (value === undefined) return fallback;
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const normalizeHomeContent = (content = {}) => ({
+  ...defaultHomeContent,
+  ...content,
+  stats: Array.isArray(content.stats) && content.stats.length ? content.stats : defaultHomeContent.stats,
+  standards: Array.isArray(content.standards) && content.standards.length ? content.standards : defaultHomeContent.standards,
+});
+
+const cleanHomeContentForSave = (content) => {
+  const { _id, __v, createdAt, updatedAt, ...clean } = content;
+  return clean;
+};
+
 // Test routes
 app.get('/', (req, res) => {
   res.send(`<h1>✅ Backend LIVE!</h1><p>Using: ${useInMemory ? 'In-Memory Storage' : 'MongoDB'}</p>`);
@@ -124,6 +182,65 @@ app.get('/api/config', (req, res) => res.json({
   usingCloudinary: !!cloudinary,
   whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824'
 }));
+
+// Home page content
+app.get('/api/home-content', async (req, res) => {
+  try {
+    if (useInMemory) {
+      return res.json({ success: true, data: normalizeHomeContent(inMemoryHomeContent) });
+    }
+
+    const content = await HomeContent.findOne({ key: 'main' }).lean();
+    return res.json({ success: true, data: normalizeHomeContent(content || {}) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.put('/api/home-content', upload.fields([
+  { name: 'heroPrimaryImage', maxCount: 1 },
+  { name: 'heroSecondaryImage', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const current = useInMemory
+      ? inMemoryHomeContent
+      : ((await HomeContent.findOne({ key: 'main' }).lean()) || {});
+
+    const data = {
+      ...req.body,
+      stats: parseJsonField(req.body.stats, current.stats || defaultHomeContent.stats),
+      standards: parseJsonField(req.body.standards, current.standards || defaultHomeContent.standards),
+    };
+
+    if (req.files?.heroPrimaryImage?.[0]) {
+      data.heroPrimaryImage = await uploadToCloudinary(req.files.heroPrimaryImage[0].buffer) || current.heroPrimaryImage || '';
+    } else {
+      data.heroPrimaryImage = req.body.heroPrimaryImageUrl || current.heroPrimaryImage || '';
+    }
+
+    if (req.files?.heroSecondaryImage?.[0]) {
+      data.heroSecondaryImage = await uploadToCloudinary(req.files.heroSecondaryImage[0].buffer) || current.heroSecondaryImage || '';
+    } else {
+      data.heroSecondaryImage = req.body.heroSecondaryImageUrl || current.heroSecondaryImage || '';
+    }
+
+    const nextContent = cleanHomeContentForSave(normalizeHomeContent({ ...current, ...data, key: 'main' }));
+
+    if (useInMemory) {
+      inMemoryHomeContent = nextContent;
+      return res.json({ success: true, data: inMemoryHomeContent });
+    }
+
+    const saved = await HomeContent.findOneAndUpdate(
+      { key: 'main' },
+      nextContent,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, data: saved });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
 
 // Helper to get medicines
 const getMedicines = async (filter = {}) => {
