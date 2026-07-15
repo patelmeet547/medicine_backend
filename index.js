@@ -12,13 +12,19 @@ try {
 // Load environment variables
 try { require('dotenv').config(); } catch (e) { /* ignore */ }
 
+const cloudinaryConfigured = !!(
+  process.env.CLOUDINARY_CLOUD_NAME &&
+  process.env.CLOUDINARY_API_KEY &&
+  process.env.CLOUDINARY_API_SECRET
+);
+
 const app = express();
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Configure Cloudinary if available
-if (cloudinary) {
+if (cloudinary && cloudinaryConfigured) {
   try {
     cloudinary.config({
       cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -129,12 +135,12 @@ mongoose.connect(mongoURI)
   });
 
 // Helper to upload to Cloudinary
-const uploadToCloudinary = async (buffer) => {
-  if (!cloudinary) return null;
+const uploadToCloudinary = async (buffer, folder = 'medicines') => {
+  if (!cloudinary || !cloudinaryConfigured) return null;
   try {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
-        { folder: 'medicines' },
+        { folder },
         (error, result) => {
           if (error) return reject(error);
           resolve(result.secure_url);
@@ -179,7 +185,7 @@ app.get('/test', (req, res) => res.json({ success: true, message: 'Works!' }));
 app.get('/api/config', (req, res) => res.json({
   success: true,
   usingMongoDB: !useInMemory,
-  usingCloudinary: !!cloudinary,
+  usingCloudinary: !!(cloudinary && cloudinaryConfigured),
   whatsappNumber: process.env.WHATSAPP_NUMBER || '919023178824'
 }));
 
@@ -213,13 +219,21 @@ app.put('/api/home-content', upload.fields([
     };
 
     if (req.files?.heroPrimaryImage?.[0]) {
-      data.heroPrimaryImage = await uploadToCloudinary(req.files.heroPrimaryImage[0].buffer) || current.heroPrimaryImage || '';
+      const uploaded = await uploadToCloudinary(req.files.heroPrimaryImage[0].buffer, 'home');
+      if (!uploaded) {
+        return res.status(400).json({ success: false, message: 'Cloudinary upload failed. Check credentials.' });
+      }
+      data.heroPrimaryImage = uploaded;
     } else {
       data.heroPrimaryImage = req.body.heroPrimaryImageUrl || current.heroPrimaryImage || '';
     }
 
     if (req.files?.heroSecondaryImage?.[0]) {
-      data.heroSecondaryImage = await uploadToCloudinary(req.files.heroSecondaryImage[0].buffer) || current.heroSecondaryImage || '';
+      const uploaded = await uploadToCloudinary(req.files.heroSecondaryImage[0].buffer, 'home');
+      if (!uploaded) {
+        return res.status(400).json({ success: false, message: 'Cloudinary upload failed. Check credentials.' });
+      }
+      data.heroSecondaryImage = uploaded;
     } else {
       data.heroSecondaryImage = req.body.heroSecondaryImageUrl || current.heroSecondaryImage || '';
     }
@@ -330,10 +344,11 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
     if (req.files && req.files.length > 0) {
       imageUrls = await Promise.all(
         req.files.map(async (file) => {
-          const url = await uploadToCloudinary(file.buffer);
-          return url || '';
+          const url = await uploadToCloudinary(file.buffer, 'medicines');
+          if (!url) throw new Error('Cloudinary upload failed. Check credentials.');
+          return url;
         })
-      ).catch(() => []);
+      );
       mainImage = imageUrls[0] || '';
     }
 
@@ -383,10 +398,11 @@ app.put('/api/medicines/:id', upload.array('images', 10), async (req, res) => {
     if (req.files && req.files.length > 0) {
       newImages = await Promise.all(
         req.files.map(async (file) => {
-          const url = await uploadToCloudinary(file.buffer);
-          return url || '';
+          const url = await uploadToCloudinary(file.buffer, 'medicines');
+          if (!url) throw new Error('Cloudinary upload failed. Check credentials.');
+          return url;
         })
-      ).catch(() => []);
+      );
     }
 
     const allImages = [...existingImages, ...newImages].slice(0, 10);
