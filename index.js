@@ -695,6 +695,61 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
+// Dashboard stats
+app.get('/api/dashboard/stats', async (req, res) => {
+  try {
+    if (useInMemory) {
+      const totalMedicines = inMemoryMedicines.length;
+      const totalOrders = inMemoryOrders.length;
+      const pendingOrders = inMemoryOrders.filter(o => o.status === 'Pending').length;
+      const completedOrders = inMemoryOrders.filter(o => o.status === 'Completed').length;
+      const cancelledOrders = inMemoryOrders.filter(o => o.status === 'Cancelled').length;
+      const unreadOrders = inMemoryOrders.filter(o => !o.isRead).length;
+      return res.json({
+        success: true,
+        data: {
+          totalMedicines,
+          totalOrders,
+          pendingOrders,
+          completedOrders,
+          cancelledOrders,
+          unreadOrders,
+        },
+      });
+    }
+
+    const [
+      totalMedicines,
+      totalOrders,
+      pendingOrders,
+      completedOrders,
+      cancelledOrders,
+      unreadOrders,
+    ] = await Promise.all([
+      Medicine.countDocuments(),
+      Order.countDocuments(),
+      Order.countDocuments({ status: 'Pending' }),
+      Order.countDocuments({ status: 'Completed' }),
+      Order.countDocuments({ status: 'Cancelled' }),
+      Order.countDocuments({ isRead: false }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        totalMedicines,
+        totalOrders,
+        pendingOrders,
+        completedOrders,
+        cancelledOrders,
+        unreadOrders,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Admin Login Route
 app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
