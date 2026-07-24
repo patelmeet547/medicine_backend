@@ -633,6 +633,40 @@ app.put('/api/orders/mark-read', async (req, res) => {
   }
 });
 
+// Update multiple pending order statuses
+app.put('/api/orders/bulk-status', async (req, res) => {
+  try {
+    const { ids, status } = req.body;
+    const allowedStatuses = ['Completed', 'Cancelled'];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No orders selected' });
+    }
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Invalid status' });
+    }
+
+    if (useInMemory) {
+      let modifiedCount = 0;
+      inMemoryOrders = inMemoryOrders.map((order) => {
+        if (ids.includes(order._id) && order.status === 'Pending') {
+          modifiedCount += 1;
+          return { ...order, status, updatedAt: new Date() };
+        }
+        return order;
+      });
+      return res.json({ success: true, modifiedCount });
+    }
+
+    const result = await Order.updateMany(
+      { _id: { $in: ids }, status: 'Pending' },
+      { $set: { status } }
+    );
+    return res.json({ success: true, modifiedCount: result.modifiedCount || 0 });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 // Update order status
 app.put('/api/orders/:id/status', async (req, res) => {
   try {
