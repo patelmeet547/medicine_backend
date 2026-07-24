@@ -37,7 +37,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   console.log('📥 GET /medicines (or /api/medicines) called');
   try {
-    const { category, company, drugType, inStock, search } = req.query;
+    const { category, company, drugType, boxName, inStock, search } = req.query;
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
     const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
     const usePagination = page > 0 && limit > 0;
@@ -45,12 +45,14 @@ router.get('/', async (req, res) => {
     if (category && category !== 'All') filter.category = category;
     if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
     if (drugType && drugType !== 'All') filter.drugType = drugType;
+    if (boxName && boxName !== 'All') filter.boxName = boxName;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) filter.$or = [
       { name:         { $regex: search, $options: 'i' } },
       { description:  { $regex: search, $options: 'i' } },
       { drugType:     { $regex: search, $options: 'i' } },
       { manufacturer: { $regex: search, $options: 'i' } },
+      { boxName:      { $regex: search, $options: 'i' } },
       { category:     { $regex: search, $options: 'i' } },
     ];
     console.log('🔍 Query filter:', filter);
@@ -115,6 +117,18 @@ router.get('/meta/drug-types', async (req, res) => {
   }
 });
 
+// GET all unique box names
+router.get('/meta/boxes', async (req, res) => {
+  try {
+    const boxes = (await Medicine.distinct('boxName'))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: boxes });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET single medicine by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -129,7 +143,7 @@ router.get('/:id', async (req, res) => {
 // POST create medicine (supports multiple images - max 10)
 router.post('/', upload.array('images', 10), async (req, res) => {
   try {
-    const { name, category, drugType, description, manufacturer, sideEffects, inStock } = req.body;
+    const { name, category, drugType, description, manufacturer, boxName, sideEffects, inStock } = req.body;
     let existingImages = [];
     if (req.body.keepImages) {
       try {
@@ -157,6 +171,7 @@ router.post('/', upload.array('images', 10), async (req, res) => {
       drugType: drugType || '',
       description, 
       manufacturer,
+      boxName: boxName || '',
       sideEffects: sideEffects || '',
       inStock: inStock === 'true' || inStock === true,
       image: mainImage,
@@ -175,7 +190,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
     const existing = await Medicine.findById(req.params.id);
     if (!existing) return res.status(404).json({ success: false, message: 'Medicine not found' });
     
-    const { name, category, drugType, description, manufacturer, sideEffects, inStock, keepImages } = req.body;
+    const { name, category, drugType, description, manufacturer, boxName, sideEffects, inStock, keepImages } = req.body;
     
     // Parse keepImages if it's a JSON string
     let keptImages = [];
@@ -206,6 +221,7 @@ router.put('/:id', upload.array('images', 10), async (req, res) => {
         drugType: drugType || '', 
         description, 
         manufacturer, 
+        boxName: boxName || '',
         sideEffects: sideEffects || '',
         inStock: inStock === 'true' || inStock === true, 
         image: mainImage,

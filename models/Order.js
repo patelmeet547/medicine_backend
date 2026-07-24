@@ -20,6 +20,9 @@ const orderItemSchema = new mongoose.Schema({
   },
   manufacturer: {
     type: String
+  },
+  boxName: {
+    type: String
   }
 });
 

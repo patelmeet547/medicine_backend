@@ -25,6 +25,11 @@ const medicineSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    boxName: {
+      type: String,
+      default: '',
+      trim: true,
+    },
     sideEffects: {
       type: String,
       default: '',

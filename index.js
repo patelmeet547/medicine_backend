@@ -52,6 +52,7 @@ try {
     drugType: { type: String, default: '' },
     description: { type: String, required: true },
     manufacturer: { type: String, required: true },
+    boxName: { type: String, default: '' },
     sideEffects: { type: String, default: '' },
     inStock: { type: Boolean, default: true },
     image: { type: String, default: '' },
@@ -275,6 +276,9 @@ const getMedicines = async (filter = {}) => {
     if (filter.drugType && filter.drugType !== 'All') {
       result = result.filter(m => m.drugType === filter.drugType);
     }
+    if (filter.boxName && filter.boxName !== 'All') {
+      result = result.filter(m => m.boxName === filter.boxName);
+    }
     if (filter.$or) {
       const searchRegex = filter.$or[0].name.$regex.toLowerCase();
       result = result.filter(m =>
@@ -282,6 +286,7 @@ const getMedicines = async (filter = {}) => {
         (m.description || '').toLowerCase().includes(searchRegex) ||
         (m.drugType || '').toLowerCase().includes(searchRegex) ||
         (m.manufacturer || '').toLowerCase().includes(searchRegex) ||
+        (m.boxName || '').toLowerCase().includes(searchRegex) ||
         (m.category || '').toLowerCase().includes(searchRegex)
       );
     }
@@ -293,7 +298,7 @@ const getMedicines = async (filter = {}) => {
 // Get all medicines
 app.get('/api/medicines', async (req, res) => {
   try {
-    const { category, company, drugType, inStock, search } = req.query;
+    const { category, company, drugType, boxName, inStock, search } = req.query;
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
     const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
     const usePagination = page > 0 && limit > 0;
@@ -301,13 +306,15 @@ app.get('/api/medicines', async (req, res) => {
     if (category && category !== 'All') filter.category = category;
     if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
     if (drugType && drugType !== 'All') filter.drugType = drugType;
+    if (boxName && boxName !== 'All') filter.boxName = boxName;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
         { drugType: { $regex: search, $options: 'i' } },
-        { manufacturer: { $regex: search, $options: 'i' } }
+        { manufacturer: { $regex: search, $options: 'i' } },
+        { boxName: { $regex: search, $options: 'i' } }
       ];
     }
     if (usePagination) {
@@ -398,6 +405,22 @@ app.get('/api/medicines/meta/drug-types', async (req, res) => {
   }
 });
 
+// Get box names
+app.get('/api/medicines/meta/boxes', async (req, res) => {
+  try {
+    let boxes;
+    if (useInMemory) {
+      boxes = [...new Set(inMemoryMedicines.map(m => m.boxName).filter(Boolean))];
+    } else {
+      boxes = await Medicine.distinct('boxName');
+    }
+    boxes = boxes.filter(Boolean).sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: boxes });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Get single medicine
 app.get('/api/medicines/:id', async (req, res) => {
   try {
@@ -443,6 +466,7 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
       drugType: data.drugType || '',
       description: data.description,
       manufacturer: data.manufacturer,
+      boxName: data.boxName || '',
       sideEffects: data.sideEffects || '',
       inStock: data.inStock === 'true' || data.inStock === true,
       image: mainImage,
@@ -517,6 +541,7 @@ app.put('/api/medicines/:id', upload.array('images', 10), async (req, res) => {
         drugType: data.drugType || '',
         description: data.description,
         manufacturer: data.manufacturer,
+        boxName: data.boxName || '',
         sideEffects: data.sideEffects || '',
         inStock: data.inStock === 'true' || data.inStock === true,
         image: mainImage,
