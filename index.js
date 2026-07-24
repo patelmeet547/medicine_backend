@@ -177,6 +177,8 @@ const cleanHomeContentForSave = (content) => {
   return clean;
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Test routes
 app.get('/', (req, res) => {
   res.send(`<h1>✅ Backend LIVE!</h1><p>Using: ${useInMemory ? 'In-Memory Storage' : 'MongoDB'}</p>`);
@@ -263,15 +265,21 @@ const getMedicines = async (filter = {}) => {
     if (filter.category && filter.category !== 'All') {
       result = result.filter(m => m.category === filter.category);
     }
+    if (filter.manufacturer) {
+      const companyRegex = new RegExp(filter.manufacturer.$regex, filter.manufacturer.$options || '');
+      result = result.filter(m => companyRegex.test(m.manufacturer || ''));
+    }
     if (filter.inStock !== undefined) {
       result = result.filter(m => m.inStock === filter.inStock);
     }
     if (filter.$or) {
       const searchRegex = filter.$or[0].name.$regex.toLowerCase();
       result = result.filter(m =>
-        m.name.toLowerCase().includes(searchRegex) ||
-        m.description.toLowerCase().includes(searchRegex) ||
-        m.manufacturer.toLowerCase().includes(searchRegex)
+        (m.name || '').toLowerCase().includes(searchRegex) ||
+        (m.description || '').toLowerCase().includes(searchRegex) ||
+        (m.drugType || '').toLowerCase().includes(searchRegex) ||
+        (m.manufacturer || '').toLowerCase().includes(searchRegex) ||
+        (m.category || '').toLowerCase().includes(searchRegex)
       );
     }
     return result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -282,14 +290,16 @@ const getMedicines = async (filter = {}) => {
 // Get all medicines
 app.get('/api/medicines', async (req, res) => {
   try {
-    const { category, inStock, search } = req.query;
+    const { category, company, inStock, search } = req.query;
     const filter = {};
     if (category && category !== 'All') filter.category = category;
+    if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } },
+        { drugType: { $regex: search, $options: 'i' } },
         { manufacturer: { $regex: search, $options: 'i' } }
       ];
     }
@@ -310,6 +320,22 @@ app.get('/api/medicines/meta/categories', async (req, res) => {
       categories = await Medicine.distinct('category');
     }
     res.json({ success: true, data: categories });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get companies
+app.get('/api/medicines/meta/companies', async (req, res) => {
+  try {
+    let companies;
+    if (useInMemory) {
+      companies = [...new Set(inMemoryMedicines.map(m => m.manufacturer).filter(Boolean))];
+    } else {
+      companies = await Medicine.distinct('manufacturer');
+    }
+    companies = companies.filter(Boolean).sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: companies });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -337,20 +363,22 @@ app.get('/api/medicines/:id', async (req, res) => {
 app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
   try {
     const data = req.body;
-    let imageUrls = [];
-    let mainImage = '';
+    let existingImages = parseJsonField(data.keepImages, []);
+    let newImages = [];
 
     // Upload images to Cloudinary if available
     if (req.files && req.files.length > 0) {
-      imageUrls = await Promise.all(
+      newImages = await Promise.all(
         req.files.map(async (file) => {
           const url = await uploadToCloudinary(file.buffer, 'medicines');
           if (!url) throw new Error('Cloudinary upload failed. Check credentials.');
           return url;
         })
       );
-      mainImage = imageUrls[0] || '';
     }
+
+    const allImages = [...existingImages, ...newImages].slice(0, 10);
+    const mainImage = allImages[0] || '';
 
     const medicineData = {
       name: data.name,
@@ -361,7 +389,7 @@ app.post('/api/medicines', upload.array('images', 10), async (req, res) => {
       sideEffects: data.sideEffects || '',
       inStock: data.inStock === 'true' || data.inStock === true,
       image: mainImage,
-      images: imageUrls
+      images: allImages
     };
 
     if (useInMemory) {

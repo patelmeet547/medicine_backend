@@ -25,6 +25,8 @@ const uploadToCloudinary = (buffer) => {
   });
 };
 
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Log all medicine requests
 router.use((req, res, next) => {
   console.log(`[MEDICINE ROUTE] ${req.method} ${req.url}`);
@@ -35,9 +37,10 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   console.log('📥 GET /medicines (or /api/medicines) called');
   try {
-    const { category, inStock, search } = req.query;
+    const { category, company, inStock, search } = req.query;
     const filter = {};
     if (category && category !== 'All') filter.category = category;
+    if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) filter.$or = [
       { name:         { $regex: search, $options: 'i' } },
@@ -66,6 +69,18 @@ router.get('/meta/categories', async (req, res) => {
   }
 });
 
+// GET all unique companies
+router.get('/meta/companies', async (req, res) => {
+  try {
+    const companies = (await Medicine.distinct('manufacturer'))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: companies });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET single medicine by ID
 router.get('/:id', async (req, res) => {
   try {
@@ -81,15 +96,25 @@ router.get('/:id', async (req, res) => {
 router.post('/', upload.array('images', 10), async (req, res) => {
   try {
     const { name, category, drugType, description, manufacturer, sideEffects, inStock } = req.body;
+    let existingImages = [];
+    if (req.body.keepImages) {
+      try {
+        existingImages = JSON.parse(req.body.keepImages);
+        if (!Array.isArray(existingImages)) existingImages = [];
+      } catch {
+        existingImages = [];
+      }
+    }
     
     // Handle multiple images to Cloudinary
-    let imageUrls = [];
+    let newImages = [];
     if (req.files && req.files.length > 0) {
       const uploadPromises = req.files.map(file => uploadToCloudinary(file.buffer));
-      imageUrls = await Promise.all(uploadPromises);
+      newImages = await Promise.all(uploadPromises);
     }
     
     // For backward compatibility, set the first image as the main image
+    const imageUrls = [...existingImages, ...newImages].slice(0, 10);
     const mainImage = imageUrls.length > 0 ? imageUrls[0] : '';
     
     const medicine = new Medicine({
