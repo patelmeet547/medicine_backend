@@ -421,6 +421,50 @@ app.get('/api/medicines/meta/boxes', async (req, res) => {
   }
 });
 
+// Bulk import medicines
+app.post('/api/medicines/bulk/import', async (req, res) => {
+  try {
+    const medicines = Array.isArray(req.body.medicines) ? req.body.medicines : [];
+    if (medicines.length === 0) {
+      return res.status(400).json({ success: false, message: 'No medicines provided' });
+    }
+
+    const docs = medicines.map((item) => ({
+      name: String(item.name || '').trim(),
+      category: String(item.category || '').trim(),
+      drugType: String(item.drugType || '').trim(),
+      description: String(item.description || '').trim(),
+      manufacturer: String(item.manufacturer || '').trim(),
+      boxName: String(item.boxName || '').trim(),
+      sideEffects: String(item.sideEffects || '').trim(),
+      inStock: item.inStock === 'false' ? false : true,
+      image: '',
+      images: [],
+    })).filter((item) => item.name && item.category && item.description);
+
+    if (docs.length === 0) {
+      return res.status(400).json({ success: false, message: 'No valid medicines provided' });
+    }
+
+    if (useInMemory) {
+      const now = new Date();
+      const imported = docs.map((doc, index) => ({
+        ...doc,
+        _id: `${Date.now()}-${index}`,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      inMemoryMedicines.push(...imported);
+      return res.status(201).json({ success: true, imported: imported.length, data: imported });
+    }
+
+    const imported = await Medicine.insertMany(docs, { ordered: false });
+    return res.status(201).json({ success: true, imported: imported.length, data: imported });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 // Get single medicine
 app.get('/api/medicines/:id', async (req, res) => {
   try {
