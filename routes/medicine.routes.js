@@ -117,7 +117,7 @@ router.get('/meta/drug-types', async (req, res) => {
   }
 });
 
-// GET all unique box names
+// GET all unique boxes
 router.get('/meta/boxes', async (req, res) => {
   try {
     const boxes = (await Medicine.distinct('boxName'))

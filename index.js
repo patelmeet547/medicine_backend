@@ -405,7 +405,7 @@ app.get('/api/medicines/meta/drug-types', async (req, res) => {
   }
 });
 
-// Get box names
+// Get boxes
 app.get('/api/medicines/meta/boxes', async (req, res) => {
   try {
     let boxes;
