@@ -37,10 +37,14 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   console.log('📥 GET /medicines (or /api/medicines) called');
   try {
-    const { category, company, inStock, search } = req.query;
+    const { category, company, drugType, inStock, search } = req.query;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
+    const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
+    const usePagination = page > 0 && limit > 0;
     const filter = {};
     if (category && category !== 'All') filter.category = category;
     if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
+    if (drugType && drugType !== 'All') filter.drugType = drugType;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) filter.$or = [
       { name:         { $regex: search, $options: 'i' } },
@@ -50,6 +54,24 @@ router.get('/', async (req, res) => {
       { category:     { $regex: search, $options: 'i' } },
     ];
     console.log('🔍 Query filter:', filter);
+    if (usePagination) {
+      const [medicines, total] = await Promise.all([
+        Medicine.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        Medicine.countDocuments(filter),
+      ]);
+      console.log('ðŸ“¤ Found', medicines.length, 'medicines');
+      return res.json({
+        success: true,
+        data: medicines,
+        pagination: {
+          page,
+          limit,
+          total,
+          hasMore: page * limit < total,
+        },
+      });
+    }
+
     const medicines = await Medicine.find(filter).sort({ createdAt: -1 });
     console.log('📤 Found', medicines.length, 'medicines');
     res.json({ success: true, data: medicines });
@@ -76,6 +98,18 @@ router.get('/meta/companies', async (req, res) => {
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
     res.json({ success: true, data: companies });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET all unique drug types
+router.get('/meta/drug-types', async (req, res) => {
+  try {
+    const drugTypes = (await Medicine.distinct('drugType'))
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: drugTypes });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

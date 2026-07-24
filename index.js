@@ -272,6 +272,9 @@ const getMedicines = async (filter = {}) => {
     if (filter.inStock !== undefined) {
       result = result.filter(m => m.inStock === filter.inStock);
     }
+    if (filter.drugType && filter.drugType !== 'All') {
+      result = result.filter(m => m.drugType === filter.drugType);
+    }
     if (filter.$or) {
       const searchRegex = filter.$or[0].name.$regex.toLowerCase();
       result = result.filter(m =>
@@ -290,10 +293,14 @@ const getMedicines = async (filter = {}) => {
 // Get all medicines
 app.get('/api/medicines', async (req, res) => {
   try {
-    const { category, company, inStock, search } = req.query;
+    const { category, company, drugType, inStock, search } = req.query;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
+    const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
+    const usePagination = page > 0 && limit > 0;
     const filter = {};
     if (category && category !== 'All') filter.category = category;
     if (company && company !== 'All') filter.manufacturer = { $regex: `^${escapeRegex(company)}$`, $options: 'i' };
+    if (drugType && drugType !== 'All') filter.drugType = drugType;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
     if (search) {
       filter.$or = [
@@ -303,6 +310,40 @@ app.get('/api/medicines', async (req, res) => {
         { manufacturer: { $regex: search, $options: 'i' } }
       ];
     }
+    if (usePagination) {
+      if (useInMemory) {
+        const allMedicines = await getMedicines(filter);
+        const start = (page - 1) * limit;
+        const medicines = allMedicines.slice(start, start + limit);
+        return res.json({
+          success: true,
+          data: medicines,
+          pagination: {
+            page,
+            limit,
+            total: allMedicines.length,
+            hasMore: start + medicines.length < allMedicines.length,
+          },
+        });
+      }
+
+      const [medicines, total] = await Promise.all([
+        Medicine.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        Medicine.countDocuments(filter),
+      ]);
+
+      return res.json({
+        success: true,
+        data: medicines,
+        pagination: {
+          page,
+          limit,
+          total,
+          hasMore: page * limit < total,
+        },
+      });
+    }
+
     const medicines = await getMedicines(filter);
     res.json({ success: true, data: medicines });
   } catch (err) {
@@ -336,6 +377,22 @@ app.get('/api/medicines/meta/companies', async (req, res) => {
     }
     companies = companies.filter(Boolean).sort((a, b) => a.localeCompare(b));
     res.json({ success: true, data: companies });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Get drug types
+app.get('/api/medicines/meta/drug-types', async (req, res) => {
+  try {
+    let drugTypes;
+    if (useInMemory) {
+      drugTypes = [...new Set(inMemoryMedicines.map(m => m.drugType).filter(Boolean))];
+    } else {
+      drugTypes = await Medicine.distinct('drugType');
+    }
+    drugTypes = drugTypes.filter(Boolean).sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: drugTypes });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
