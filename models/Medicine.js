@@ -51,4 +51,10 @@ const medicineSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+medicineSchema.index({ createdAt: -1 });
+medicineSchema.index({ category: 1, createdAt: -1 });
+medicineSchema.index({ manufacturer: 1, createdAt: -1 });
+medicineSchema.index({ drugType: 1, createdAt: -1 });
+medicineSchema.index({ boxName: 1, createdAt: -1 });
+
 module.exports = mongoose.model('Medicine', medicineSchema);

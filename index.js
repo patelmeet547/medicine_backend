@@ -58,6 +58,11 @@ try {
     image: { type: String, default: '' },
     images: [{ type: String, default: '' }]
   }, { timestamps: true });
+  medicineSchema.index({ createdAt: -1 });
+  medicineSchema.index({ category: 1, createdAt: -1 });
+  medicineSchema.index({ manufacturer: 1, createdAt: -1 });
+  medicineSchema.index({ drugType: 1, createdAt: -1 });
+  medicineSchema.index({ boxName: 1, createdAt: -1 });
   try {
     Medicine = mongoose.model('Medicine');
   } catch {
