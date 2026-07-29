@@ -38,6 +38,9 @@ router.get('/', async (req, res) => {
   console.log('📥 GET /medicines (or /api/medicines) called');
   try {
     const { category, company, drugType, boxName, inStock, search, descriptionSearch } = req.query;
+    const listProjection = req.query.fields === 'list'
+      ? 'name category drugType description manufacturer boxName image images inStock createdAt'
+      : null;
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
     const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
     const usePagination = page > 0 && limit > 0;
@@ -59,7 +62,7 @@ router.get('/', async (req, res) => {
     console.log('🔍 Query filter:', filter);
     if (usePagination) {
       const [medicines, total] = await Promise.all([
-        Medicine.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+        Medicine.find(filter).select(listProjection).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
         Medicine.countDocuments(filter),
       ]);
       console.log('ðŸ“¤ Found', medicines.length, 'medicines');
@@ -75,7 +78,7 @@ router.get('/', async (req, res) => {
       });
     }
 
-    const medicines = await Medicine.find(filter).sort({ createdAt: -1 });
+    const medicines = await Medicine.find(filter).select(listProjection).sort({ createdAt: -1 });
     console.log('📤 Found', medicines.length, 'medicines');
     res.json({ success: true, data: medicines });
   } catch (err) {
