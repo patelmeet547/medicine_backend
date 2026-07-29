@@ -284,6 +284,10 @@ const getMedicines = async (filter = {}) => {
     if (filter.boxName && filter.boxName !== 'All') {
       result = result.filter(m => m.boxName === filter.boxName);
     }
+    if (filter.description) {
+      const descriptionRegex = filter.description.$regex.toLowerCase();
+      result = result.filter(m => (m.description || '').toLowerCase().includes(descriptionRegex));
+    }
     if (filter.$or) {
       const searchRegex = filter.$or[0].name.$regex.toLowerCase();
       result = result.filter(m =>
@@ -303,7 +307,7 @@ const getMedicines = async (filter = {}) => {
 // Get all medicines
 app.get('/api/medicines', async (req, res) => {
   try {
-    const { category, company, drugType, boxName, inStock, search } = req.query;
+    const { category, company, drugType, boxName, inStock, search, descriptionSearch } = req.query;
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
     const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
     const usePagination = page > 0 && limit > 0;
@@ -313,6 +317,7 @@ app.get('/api/medicines', async (req, res) => {
     if (drugType && drugType !== 'All') filter.drugType = drugType;
     if (boxName && boxName !== 'All') filter.boxName = boxName;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
+    if (descriptionSearch) filter.description = { $regex: descriptionSearch, $options: 'i' };
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },

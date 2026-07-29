@@ -15,6 +15,16 @@ const orderItemSchema = new mongoose.Schema({
     required: true,
     min: 1
   },
+  boxQuantity: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  stripQuantity: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
   category: {
     type: String
   },

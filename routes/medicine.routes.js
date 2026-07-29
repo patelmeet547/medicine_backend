@@ -37,7 +37,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   console.log('📥 GET /medicines (or /api/medicines) called');
   try {
-    const { category, company, drugType, boxName, inStock, search } = req.query;
+    const { category, company, drugType, boxName, inStock, search, descriptionSearch } = req.query;
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 0);
     const limit = Math.min(60, Math.max(1, Number.parseInt(req.query.limit, 10) || 0));
     const usePagination = page > 0 && limit > 0;
@@ -47,6 +47,7 @@ router.get('/', async (req, res) => {
     if (drugType && drugType !== 'All') filter.drugType = drugType;
     if (boxName && boxName !== 'All') filter.boxName = boxName;
     if (inStock !== undefined && inStock !== '') filter.inStock = inStock === 'true';
+    if (descriptionSearch) filter.description = { $regex: descriptionSearch, $options: 'i' };
     if (search) filter.$or = [
       { name:         { $regex: search, $options: 'i' } },
       { description:  { $regex: search, $options: 'i' } },
