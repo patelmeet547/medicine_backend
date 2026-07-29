@@ -436,6 +436,26 @@ app.get('/api/medicines/meta/boxes', async (req, res) => {
   }
 });
 
+// Get descriptions
+app.get('/api/medicines/meta/descriptions', async (req, res) => {
+  try {
+    let descriptions;
+    if (useInMemory) {
+      descriptions = [...new Set(inMemoryMedicines.map(m => m.description).filter(Boolean))];
+    } else {
+      descriptions = await Medicine.distinct('description');
+    }
+    descriptions = [...new Set(
+      descriptions
+        .map((description) => String(description || '').trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: descriptions });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // Bulk import medicines
 app.post('/api/medicines/bulk/import', async (req, res) => {
   try {

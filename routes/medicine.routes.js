@@ -133,6 +133,20 @@ router.get('/meta/boxes', async (req, res) => {
   }
 });
 
+// GET all unique descriptions
+router.get('/meta/descriptions', async (req, res) => {
+  try {
+    const descriptions = [...new Set(
+      (await Medicine.distinct('description'))
+        .map((description) => String(description || '').trim())
+        .filter(Boolean)
+    )].sort((a, b) => a.localeCompare(b));
+    res.json({ success: true, data: descriptions });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // GET single medicine by ID
 router.get('/:id', async (req, res) => {
   try {
