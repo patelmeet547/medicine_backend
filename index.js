@@ -76,6 +76,8 @@ const Admin = require('./models/Admin');
 const HomeContent = require('./models/HomeContent');
 const DEFAULT_ADMIN_EMAIL = 'tirthpatel@gmail.com';
 const DEFAULT_ADMIN_PASSWORD = 'Tirth@12123';
+const ORDER_ADMIN_ID = 'pma@09';
+const ORDER_ADMIN_PASSWORD = 'Pankaj@123';
 
 const defaultHomeContent = {
   heroBadge: '5000+ Pharmaceutical Products',
@@ -642,12 +644,35 @@ app.delete('/api/medicines/bulk/delete', async (req, res) => {
 });
 
 // Create an order
+async function getNextOrderMeta() {
+  const now = new Date();
+  const fullYear = now.getFullYear();
+  const shortYear = String(fullYear).slice(-2);
+  let orderSequence = 1;
+
+  if (useInMemory) {
+    const currentYearOrders = inMemoryOrders.filter((order) => order.orderYear === fullYear);
+    orderSequence = currentYearOrders.reduce((max, order) => Math.max(max, order.orderSequence || 0), 0) + 1;
+  } else {
+    const latestOrder = await Order.findOne({ orderYear: fullYear }).sort({ orderSequence: -1, createdAt: -1 }).lean();
+    orderSequence = (latestOrder?.orderSequence || 0) + 1;
+  }
+
+  return {
+    orderNumber: `${String(orderSequence).padStart(2, '0')}/${shortYear}`,
+    orderSequence,
+    orderYear: fullYear,
+  };
+}
+
 app.post('/api/orders', async (req, res) => {
   try {
     const { customerName, customerPhone, items } = req.body;
+    const orderMeta = await getNextOrderMeta();
     if (useInMemory) {
       const newOrder = {
         _id: Date.now().toString(),
+        ...orderMeta,
         customerName,
         customerPhone,
         items,
@@ -659,7 +684,7 @@ app.post('/api/orders', async (req, res) => {
       inMemoryOrders.push(newOrder);
       return res.status(201).json({ success: true, data: newOrder });
     } else {
-      const order = new Order({ customerName, customerPhone, items });
+      const order = new Order({ ...orderMeta, customerName, customerPhone, items });
       await order.save();
       return res.status(201).json({ success: true, data: order });
     }
@@ -774,6 +799,24 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
+// Delete an order
+app.delete('/api/orders/:id', async (req, res) => {
+  try {
+    if (useInMemory) {
+      const beforeCount = inMemoryOrders.length;
+      inMemoryOrders = inMemoryOrders.filter(o => o._id !== req.params.id);
+      if (inMemoryOrders.length === beforeCount) return res.status(404).json({ success: false, message: 'Not found' });
+      return res.json({ success: true, message: 'Order deleted' });
+    }
+
+    const order = await Order.findByIdAndDelete(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: 'Not found' });
+    return res.json({ success: true, message: 'Order deleted' });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 // Dashboard stats
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
@@ -834,14 +877,18 @@ app.post('/api/admin/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password required' });
   const normalizedEmail = email.trim().toLowerCase();
+
+  if (normalizedEmail === ORDER_ADMIN_ID && password === ORDER_ADMIN_PASSWORD) {
+    return res.json({ success: true, role: 'orders', message: 'Login successful' });
+  }
   
   if (normalizedEmail === DEFAULT_ADMIN_EMAIL && password === DEFAULT_ADMIN_PASSWORD) {
-    return res.json({ success: true, message: 'Login successful' });
+    return res.json({ success: true, role: 'super', message: 'Login successful' });
   }
   
   if (useInMemory) {
     if (normalizedEmail === DEFAULT_ADMIN_EMAIL && password === DEFAULT_ADMIN_PASSWORD) {
-      return res.json({ success: true, message: 'Login successful' });
+      return res.json({ success: true, role: 'super', message: 'Login successful' });
     }
     return res.status(401).json({ success: false, message: 'Invalid credentials' });
   }
@@ -853,7 +900,7 @@ app.post('/api/admin/login', async (req, res) => {
     // Using plain text comparison
     if (admin.password !== password) return res.status(401).json({ success: false, message: 'Invalid credentials' });
     
-    res.json({ success: true, message: 'Login successful' });
+    res.json({ success: true, role: 'super', message: 'Login successful' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

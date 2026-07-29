@@ -37,6 +37,15 @@ const orderItemSchema = new mongoose.Schema({
 });
 
 const orderSchema = new mongoose.Schema({
+  orderNumber: {
+    type: String
+  },
+  orderSequence: {
+    type: Number
+  },
+  orderYear: {
+    type: Number
+  },
   customerName: {
     type: String,
     required: true
